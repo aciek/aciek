@@ -1,0 +1,30 @@
+#!/bin/bash
+if [[ $# -lt 2 ]]
+ then
+    echo "Server name: "
+    read NAME
+    echo "Server ip: "
+    read IP
+else
+    NAME=$1
+    IP=$2
+fi
+openssl genrsa -out "$NAME.key" 2048
+openssl req -new -key "$NAME.key" -out "$NAME.csr" -subj "/C=PL/ST=Narnia/L=Pingwinowo/O=Nielot Company/OU=Garbage Department/CN=$NAME"
+cat >"$NAME.ext" <<-EOF
+authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage = digitalSignature, nonRepudiation, keyEncipherment, dataEncipherment
+subjectAltName = @alt_names
+[alt_names]
+DNS.1 = $NAME
+IP.1 = $IP
+EOF
+if [ -f test.pem -a -f testkey.pem ]
+#if [[ -f test.pem && -f testkey.pem ]]
+then
+    openssl x509 -req -in $NAME.csr -CA test.pem -CAkey testkey.pem -CAcreateserial -out $NAME.crt -days 825 -sha256 -extfile $NAME.ext
+else
+    echo "Brak certyfikatow CA"
+    exit 99
+fi
