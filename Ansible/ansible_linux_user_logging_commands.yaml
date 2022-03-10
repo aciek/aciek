@@ -1,0 +1,104 @@
+  - hosts: linux
+    remote_user: aciek
+    become: true
+    become_method: sudo
+    vars:
+    tasks:
+      - name: Install package psmisc on RedHat
+        yum:
+          name: psmisc
+          state: present
+        when: ansible_os_family == 'RedHat'
+      - name: Install package psmisc on Debian
+        apt:
+          name: psmisc
+          state: present
+        when: ansible_os_family == 'Debian'
+      - name: Check /etc/rsyslog.d/bash.conf exists
+        stat:
+          path: /etc/rsyslog.d/bash.conf 
+        register: bash_conf_check
+      - name: Create backup of bash.conf to /tmp
+        copy:
+          remote_src: yes
+          src: /etc/rsyslog.d/bash.conf
+          dest: /tmp/bash.conf
+        when: bash_conf_check.stat.exists 
+      - name: Create config  bash.conf for rsyslog
+        copy:
+          dest: /etc/rsyslog.d/bash.conf
+          content: |
+            local6.* /var/log/commands.log
+      - name: Create backup of bashrc to bashrc.old on RedHat
+        copy:
+          remote_src: yes
+          src: /etc/bashrc
+          dest: /tmp/bashrc.old
+        when: ansible_os_family == 'RedHat'
+      - name: Create backup of bash.bashrc to bash.bashrc.old on Debian
+        copy:
+          remote_src: yes
+          src: /etc/bash.bashrc
+          dest: /tmp/bash.bashrc.old
+        when: ansible_os_family == 'Debian'
+      - name: Delete whoami and export PROMPT_COMMAND in bashrc when present on RedHat
+        lineinfile:
+          path: /etc/bashrc
+          regexp: "{{ item.regexp }}"
+          state: absent
+        loop:
+          - { regexp: '^whoami=' }
+          - { regexp: '^export PROMPT_COMMAND=' }
+        when: ansible_os_family == 'RedHat'
+      - name: Delete whoami and export PROMPT_COMMAND in bashrc when present on Debian
+        lineinfile:
+          path: /etc/bash.bashrc
+          regexp: "{{ item.regexp }}"
+          state: absent
+        loop:
+          - { regexp: '^whoami=' }
+          - { regexp: '^export PROMPT_COMMAND=' }
+        when: ansible_os_family == 'Debian'
+      - name: Insert variables whoami and export PROMPT_COMMAND when not present on RedHat
+        blockinfile:
+          path: /etc/bashrc
+          insertafter: EOF
+          block: |
+            whoami="$(whoami)@$(echo $SSH_CONNECTION | awk '{print $1}')"
+            export PROMPT_COMMAND='RETRN_VAL=$?;logger -p local6.debug "$whoami [$$]: $(history 1 | sed "s/^[ ]*[0-9]\+[ ]*//" ) [$RETRN_VAL]"'
+        when: ansible_os_family == 'RedHat'
+      - name: Insert variables whoami and export PROMPT_COMMAND when not present on Debian
+        blockinfile:
+          path: /etc/bash.bashrc
+          insertafter: EOF
+          block: |
+            whoami="$(whoami)@$(echo $SSH_CONNECTION | awk '{print $1}')"
+            export PROMPT_COMMAND='RETRN_VAL=$?;logger -p local6.debug "$whoami [$$]: $(history 1 | sed "s/^[ ]*[0-9]\+[ ]*//" ) [$RETRN_VAL]"'
+        when: ansible_os_family == 'Debian'
+      - name: Remove logrotate commands configuration if exists
+        file:
+          path: /etc/logrotate.d/commands
+          state: absent
+      - name: Create logrotate commands configuration
+        blockinfile:
+          path: /etc/logrotate.d/commands
+          create: yes
+          block: |
+            /var/log/commands.log {
+            rotate 31
+            daily
+            compress
+            delaycompress
+            notifempty
+            dateyesterday
+            dateext
+            create
+            postrotate
+              /usr/bin/killall -HUP rsyslogd
+            endscript
+            }
+      - name: Restart RSYSLOG
+        systemd:
+          name: rsyslog
+          state: restarted
+          daemon_reload: yes

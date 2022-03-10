@@ -1,0 +1,120 @@
+  - hosts: Vsftpd
+    remote_user: aciek
+    become: true
+    become_method: sudo
+    tasks:
+      - name: Packages gather info
+        package_facts:
+          manager: auto      
+      - name: Check if vsftpd is installed  
+        debug:
+          msg: "Vsftpd not installed!"
+        when: "'vsftpd' not in ansible_facts.packages"
+      - name: Create directory /etc/ssl/vsftpd
+        file:
+          path: /etc/ssl/vsftpd
+          force: yes
+          mode: 0710
+          state: directory
+      - name: Copy certificate {{ ansible_hostname }}.crt to server
+        copy:
+          dest: /etc/ssl/vsftpd/{{ ansible_hostname }}.crt
+          src: /tmp/{{ ansible_hostname }}.crt
+          mode: 0440
+          force: yes
+      - name: Copy key {{ ansible_hostname }}.key to server
+        copy:
+          dest: /etc/ssl/vsftpd/{{ ansible_hostname }}.key
+          src: /tmp/{{ ansible_hostname }}.key
+          mode: 0440
+          force: yes
+      - name: If not installed install vsftpd service on RedHat Family OS
+        yum:
+          name: vsftpd
+          state: latest
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'RedHat'"
+      - name: If not installed install vsftpd service on Debian Family OS
+        apt:
+          name: vsftpd
+          state: latest
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'Debian'"
+      - name: Make sure a service VSFTPD is running
+        register: result
+        ignore_errors: true
+        systemd:
+          state: started
+          name: vsftpd
+      - name: Print info
+        debug:
+          msg: "VSFTPD is running"
+        when: result is succeeded
+      - name: Create backup of vsftpd.conf  on Debian Family OS
+        copy:
+          remote_src: yes
+          src: /etc/vsftpd.conf
+          dest: /etc/vsftpd.conf.bak
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'Debian'"
+      - name: Create backup of vsftpd.conf  on RedHat Family OS
+        copy:
+          remote_src: yes
+          src: /etc/vsftpd/vsftpd.conf
+          dest: /etc/vsftpd/vsftpd.conf.bak
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'RedHat'"
+      - name: Comment out default variables on Debian Family OS
+        lineinfile:
+          path: /etc/vsftpd.conf
+          regexp: "{{ item.regexp }}"
+          line: "{{ item.line }}"
+        loop:
+          - { regexp: '^ssl_enable', line: '#ssl_enable' }
+          - { regexp: '^rsa_cert_file', line: '#rsa_cert_file' }
+          - { regexp: '^rsa_private_key', line: '#rsa_private_key' }
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'Debian'"
+      - name: Insert variables to vsftpd.conf on Debian Family OS  
+        blockinfile:
+          path: /etc/vsftpd.conf
+          insertafter: EOF
+          block: |
+            pasv_enable=YES
+            ssl_enable=YES
+            ssl_tlsv1=YES
+            ssl_sslv2=NO
+            ssl_sslv3=NO
+            rsa_cert_file=/etc/ssl/vsftpd/{{ ansible_hostname }}.crt
+            rsa_private_key_file=/etc/ssl/vsftpd/{{ ansible_hostname }}.key
+            allow_anon_ssl=NO
+            force_local_data_ssl=YES
+            force_local_logins_ssl=YES
+            require_ssl_reuse=NO
+            ssl_ciphers=HIGH
+            pasv_min_port=40000
+            pasv_max_port=50000
+            debug_ssl=YES
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'Debian'"
+      - name: Insert variables to vsftpd.conf on RedHat Family OS  
+        blockinfile:
+          path: /etc/vsftpd/vsftpd.conf
+          insertafter: EOF
+          block: |
+            pasv_enable=YES
+            ssl_enable=YES
+            allow_anon_ssl=NO
+            ssl_tlsv1_2=YES
+            ssl_sslv2=NO
+            ssl_sslv3=NO
+            rsa_cert_file=/etc/ssl/vsftpd/{{ ansible_hostname }}.crt
+            rsa_private_key_file=/etc/ssl/vsftpd/{{ ansible_hostname }}.key
+            allow_anon_ssl=NO
+            force_local_data_ssl=YES
+            force_local_logins_ssl=YES
+            require_ssl_reuse=NO
+            ssl_ciphers=HIGH
+            pasv_min_port=40000
+            pasv_max_port=50000
+            debug_ssl=YES
+        when: "'vsftpd' not in ansible_facts.packages and ansible_os_family == 'RedHat'"
+      - name: Restart VSFTPD
+        systemd:
+          name: vsftpd
+          state: restarted
+          daemon_reload: yes
