@@ -1,4 +1,4 @@
-- 👋 Hi, I’m @aciek
+- 👋 Hi, I’m @aciek 🐧
 - 👀 I’m interested in everything but I know Unix liked OS's, scripting and programming in multiple languages, databases, application servers and virtualization. 
      Also I am sailing, cooking, reading and many more. 
 - 🌱 I’m currently learning containers and ansible and also explore what i know. 
