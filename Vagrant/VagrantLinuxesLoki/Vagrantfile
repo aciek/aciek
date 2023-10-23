@@ -1,0 +1,124 @@
+# 
+#
+
+Vagrant.configure("2") do |logserverConfig|
+ logserverConfig.vm.define "logserver" do |logserver|
+    logserver.vm.box = "ubuntu/focal64"
+    logserver.vm.hostname = "logserver"
+    logserver.vm.network "private_network", ip: "192.168.56.14"
+    logserver.ssh.insert_key = false
+    logserver.vm.provider "virtualbox" do |vLogServer|
+      vLogServer.name = "logserver"
+      vLogServer.customize ["modifyvm", :id, "--memory", 1024]
+      vLogServer.customize ["modifyvm", :id, "--cpus", 1]
+    end
+    logserver.vm.provision "shell", inline: <<-SHELL
+      apt update
+      apt upgrade -y
+      apt install -y ssh
+      echo "install auditd"
+      apt install -y auditd
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 centos centos" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 logserver logserver" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+  end
+end
+
+
+Vagrant.configure("2") do |centosConfig|
+  centosConfig.vm.define "centos" do |centos|
+    centos.vm.box = "centos/8"
+    centos.vm.hostname = "centos"
+    centos.vm.network "private_network", ip: "192.168.56.10"
+    centos.ssh.insert_key = false
+    centos.vm.provider "virtualbox" do |vCentos|
+      vCentos.name = "centos8"
+      vCentos.customize ["modifyvm", :id, "--memory", 1024]
+      vCentos.customize ["modifyvm", :id, "--cpus", 1]
+    end
+    centos.vm.provision "shell", inline: <<-SHELL
+      dnf update
+      dnf groupinstall -y 'Minimal Install'
+      dnf install -y epel-release
+      dnf install -y vim
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 centos centos" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 logserver logserver" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+  end
+end
+
+Vagrant.configure("2") do |ubuntuConfig|
+  ubuntuConfig.vm.define "ubuntu" do |ubuntu|
+    ubuntu.vm.box = "ubuntu/focal64"
+    ubuntu.vm.hostname = "ubuntu"
+    ubuntu.vm.network "private_network", ip: "192.168.56.12"
+    ubuntu.ssh.insert_key = false
+    ubuntu.vm.provider "virtualbox" do |vUbuntu|
+      vUbuntu.name = "ubuntu"
+      vUbuntu.customize ["modifyvm", :id, "--memory", 1024]
+      vUbuntu.customize ["modifyvm", :id, "--cpus", 1]
+    end
+    ubuntu.vm.provision "shell", inline: <<-SHELL
+      apt update
+      apt upgrade -y 
+      apt install -y ssh
+      echo "install auditd"
+      apt install -y auditd
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 centos centos" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 logserver logserver" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+  end
+end
+
+Vagrant.configure("2") do |debian10Config|
+  debian10Config.vm.define "debian10" do |debian10|
+    debian10.vm.box = "debian/bullseye64"
+    debian10.vm.hostname = "debian10"
+    debian10.vm.network "private_network", ip: "192.168.56.16"
+    debian10.ssh.insert_key = false
+    debian10.vm.provider "virtualbox" do |vDebian10|
+      vDebian10.name = "debian10"
+      vDebian10.customize ["modifyvm", :id, "--memory", 1024]
+      vDebian10.customize ["modifyvm", :id, "--cpus", 1]
+    end
+   debian10.vm.provision "shell", inline: <<-SHELL
+      apt update
+      apt upgrade -y
+      apt install -y ssh 
+      echo "install auditd"
+      apt install -y auditd
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 centos centos" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 logserver logserver" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+  end
+end
+
+
