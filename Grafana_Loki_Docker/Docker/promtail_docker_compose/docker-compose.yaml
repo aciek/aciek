@@ -1,0 +1,12 @@
+networks:
+  loki:
+
+services:
+  promtail:
+    image: grafana/promtail:3.0.0
+    volumes:
+      - /var/log:/var/log
+      - ~/docker/:/tmp/promtail/config
+    command: -config.file=/tmp/promtail/config/promtail-config.yaml
+    networks:
+      - loki

@@ -1,0 +1,190 @@
+# 
+#
+
+Vagrant.configure("2") do |logserverConfig|
+ logserverConfig.vm.define "loki" do |logserver|
+    logserver.vm.box = "ubuntu/focal64"
+    logserver.vm.hostname = "loki"
+    logserver.vm.network "private_network", ip: "192.168.56.14"
+    logserver.ssh.insert_key = false
+    logserver.vm.provider "virtualbox" do |vLogServer|
+      vLogServer.name = "loki"
+      vLogServer.customize ["modifyvm", :id, "--memory", 2048]
+      vLogServer.customize ["modifyvm", :id, "--cpus", 2]
+    end
+    logserver.vm.provision "MAIN", type: "shell", inline: <<-SHELL
+      apt update
+      apt upgrade -y
+      apt install -y ssh
+      echo "install auditd"
+      apt install -y auditd
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 almalinux almalinux" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 loki loki" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+    logserver.vm.provision "DOCKER", after: "MAIN", type: "shell", inline: <<-SHELL
+      apt install -y apt-transport-https ca-certificates curl software-properties-common
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+      add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
+      apt install -y docker-ce
+      usermod -aG docker vagrant
+      apt install -y docker-compose-plugin 
+
+    SHELL
+  end
+end
+
+
+Vagrant.configure("2") do |almalinuxConfig|
+  almalinuxConfig.vm.define "almalinux" do |almalinux|
+    #almalinux.vm.box = "almalinux/8"
+    almalinux.vm.box = "almalinux/8"
+    almalinux.vm.hostname = "almalinux"
+    almalinux.vm.network "private_network", ip: "192.168.56.10"
+    almalinux.ssh.insert_key = false
+    almalinux.vm.provider "virtualbox" do |vCentos|
+      vCentos.name = "almalinux8"
+      vCentos.customize ["modifyvm", :id, "--memory", 1024]
+      vCentos.customize ["modifyvm", :id, "--cpus", 1]
+    end
+    almalinux.vm.provision "MAIN", type: "shell", inline: <<-SHELL
+      dnf install -y epel-release
+      dnf update -y 
+      cd /etc/yum.repos.d/
+      sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-*
+      sed -i 's|#baseurl=http://mirror.almalinux.org|baseurl=http://vault.almalinux.org|g' /etc/yum.repos.d/CentOS-*
+      dnf update -y 
+      dnf groupinstall -y 'Minimal Install'
+      dnf install -y epel-release
+      dnf install -y vim curl
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 almalinux almalinux" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 loki loki" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+    almalinux.vm.provision "JOURNAL-PERSISTENT", after: "MAIN", type: "shell", inline: <<-SHELL
+      echo "Storage=persistent" >> /etc/systemd/journald.conf
+      systemctl restart systemd-journald
+    SHELL
+    almalinux.vm.provision "APACHE", after: "MAIN", type: "shell", inline: <<-SHELL
+      dnf install -y httpd
+      systemctl enable --now httpd
+    SHELL
+    almalinux.vm.provision "DOCKER", after: "MAIN", type: "shell", inline: <<-SHELL
+      dnf config-manager --add-repo=https://download.docker.com/linux/centos/docker-ce.repo
+      dnf install -y docker-ce docker-ce-cli containerd.io 
+      systemctl enable --now docker
+      systemctl start --now docker
+      usermod -aG docker vagrant
+      curl -L https://github.com/docker/compose/releases/download/v2.29.7/docker-compose-`uname -s`-`uname -m` -o /usr/local/bin/docker-compose
+      chmod +x /usr/local/bin/docker-compose
+      ln -s /usr/local/bin/docker-compose /usr/bin/docker-compose
+    SHELL
+    almalinux.vm.provision "CP-PROMTAIL-COMPOSE", type: "file", source: "~/docker/grafana_loki_promtail_aciek/promtail_docker_compose/docker-compose.yaml", destination: "$HOME/docker/docker-compose.yaml"
+    almalinux.vm.provision "CP-PROMTAIL-YAML", type: "file", source: "~/docker/grafana_loki_promtail_aciek/promtail_docker_compose/promtail-config-almalinux.yaml", destination: "$HOME/docker/promtail-config.yaml"
+    almalinux.vm.provision "JOURNAL-REBOOT", type: "shell", inline: <<-SHELL
+      shutdown -r now
+    SHELL
+
+  end
+end
+
+Vagrant.configure("2") do |ubuntuConfig|
+  ubuntuConfig.vm.define "ubuntu" do |ubuntu|
+    ubuntu.vm.box = "ubuntu/focal64"
+    ubuntu.vm.hostname = "ubuntu"
+    ubuntu.vm.network "private_network", ip: "192.168.56.12"
+    ubuntu.ssh.insert_key = false
+    ubuntu.vm.provider "virtualbox" do |vUbuntu|
+      vUbuntu.name = "ubuntu"
+      vUbuntu.customize ["modifyvm", :id, "--memory", 1024]
+      vUbuntu.customize ["modifyvm", :id, "--cpus", 1]
+    end
+   ubuntu.vm.provision "MAIN", type: "shell", inline: <<-SHELL
+      apt update
+      apt upgrade -y 
+      apt install -y ssh
+      echo "install auditd"
+      apt install -y auditd
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 almalinux almalinux" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 loki loki" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+   ubuntu.vm.provision "NGINX_UBUNTU", type: "shell", inline: <<-SHELL
+      apt install -y nginx
+      systemctl enable nginx
+      systemctl restart nginx
+     SHELL
+   ubuntu.vm.provision "DOCKER_UBUNTU", type: "shell", inline: <<-SHELL
+      apt install -y apt-transport-https ca-certificates curl software-properties-common
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add -
+      add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/ubuntu focal stable"
+      apt install -y docker-ce
+      usermod -aG docker vagrant
+      apt install -y docker-compose-plugin 
+    SHELL
+   ubuntu.vm.provision "COPY-PROMTAIL-COMPOSE", type: "file", source: "~/docker/grafana_loki_promtail_aciek/promtail_docker_compose/docker-compose.yaml", destination: "$HOME/docker/docker-compose.yaml"
+   ubuntu.vm.provision "COPY-PROMTAIL-YAML", type: "file", source: "~/docker/grafana_loki_promtail_aciek/promtail_docker_compose/promtail-config-ubuntu.yaml", destination: "$HOME/docker/promtail-config.yaml"
+  end
+end
+
+Vagrant.configure("2") do |debian10Config|
+  debian10Config.vm.define "debian10" do |debian10|
+    debian10.vm.box = "debian/bullseye64"
+    debian10.vm.hostname = "debian10"
+    debian10.vm.network "private_network", ip: "192.168.56.16"
+    debian10.ssh.insert_key = false
+    debian10.vm.provider "virtualbox" do |vDebian10|
+      vDebian10.name = "debian10"
+      vDebian10.customize ["modifyvm", :id, "--memory", 1024]
+      vDebian10.customize ["modifyvm", :id, "--cpus", 1]
+    end
+   debian10.vm.provision "MAIN", type: "shell", inline: <<-SHELL
+      apt update
+      apt upgrade -y
+      apt install -y ssh 
+      echo "install auditd"
+      apt install -y auditd
+      sed -i '/GSSAPIAuthentication/ s/^/#/' /etc/ssh/sshd_config
+      sed -i '/GSSAPICleanupCredentials/ s/^/#/' /etc/ssh/sshd_config
+      sed -i -e 's/PasswordAuthentication no/PasswordAuthentication yes/g' /etc/ssh/sshd_config
+      echo "!!! Restart sshd !!!"
+      systemctl restart sshd
+      echo "192.168.56.10 almalinux almalinux" >> /etc/hosts
+      echo "192.168.56.12 ubuntu ubuntu" >> /etc/hosts
+      echo "192.168.56.14 loki loki" >> /etc/hosts
+      echo "192.168.56.16 debian10 debian10" >> /etc/hosts
+    SHELL
+   debian10.vm.provision "DOCKER", after: "MAIN", type: "shell", inline: <<-SHELL
+      apt install -y apt-transport-https ca-certificates curl gnupg2 software-properties-common
+      curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
+      add-apt-repository -y "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable"
+      apt update
+      apt install -y docker-ce
+      usermod -aG docker vagrant
+      apt install -y docker-compose-plugin 
+    SHELL
+   debian10.vm.provision "CP-PROMTAIL-COMPOSE", type: "file", source: "~/docker/grafana_loki_promtail_aciek/promtail_docker_compose/docker-compose.yaml", destination: "$HOME/docker/docker-compose.yaml"
+   debian10.vm.provision "CP-PROMTAIL-YAML", type: "file", source: "~/docker/grafana_loki_promtail_aciek/promtail_docker_compose/promtail-config-debian.yaml", destination: "$HOME/docker/promtail-config.yaml"
+
+  end
+end
+
+
